@@ -1,6 +1,19 @@
-const pool = require('../config/db.config');
+import pool from '../config/db.config'; 
 
-const createUser = async (profile) => {
+export const getUserById = async (id) => {
+  const query = 'SELECT * FROM users WHERE id = $1';
+  const values = [id];
+
+  try {
+    const res = await pool.query(query, values);
+    return res.rows[0];
+  } catch (err) {
+    console.error(err);
+    throw new Error('Error fetching user');
+  }
+};
+
+export const createUser = async (profile) => {
   const query = `
     INSERT INTO users (id, email, first_name, last_name, connection_id, connection_type, idp_id, raw_attributes)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -34,8 +47,4 @@ const createUser = async (profile) => {
     console.error(err);
     throw new Error('Error creating or updating user');
   }
-};
-
-module.exports = {
-  createUser,
 };
