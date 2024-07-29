@@ -39,7 +39,19 @@ const getUserById = async (id) => {
       console.error(err);
       throw new Error('Error fetching user');
     }
-  };
+};
+
+const getUsers = async () => {
+  const query = 'SELECT * FROM users';
+
+  try {
+    const res = await pool.query(query);
+    return res.rows;
+  } catch (err) {
+    console.error(err);
+    throw new Error('Error fetching user');
+  }
+};
   
 const createUser = async (profile) => {
     const query = `
@@ -94,6 +106,22 @@ router.get('/', function (req, res) {
         res.render('index.ejs', { title: 'Home' })
     }
 })
+
+// GET users 
+router.get('/users', async (req, res)  => {
+    var email = req.query.filter;
+    let users = await getUsers();
+    var userRes = []
+    if (email) {
+      userRes.push(users.filter((item) => item?.email == email))
+
+      res.send( {users: userRes[0]} )
+    } else {
+      res.send( { users })
+    }
+});
+
+// GET 1 user
 
 router.post('/login', (req, res) => {
     const login_type = req.body.login_method
