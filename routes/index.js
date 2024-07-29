@@ -93,7 +93,7 @@ const createUser = async (profile) => {
 const workos = new WorkOS(process.env.WORKOS_API_KEY)
 const clientID = process.env.WORKOS_CLIENT_ID
 const organizationID = 'org_01J25MWRKQ31M7R3N081H1XDMM'
-const redirectURI = 'http://localhost:8000/callback'
+const redirectURI = 'https://digitaldev.io.vn/callback'
 const state = ''
 
 router.get('/', function (req, res) {
