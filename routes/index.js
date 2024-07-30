@@ -6,6 +6,7 @@ const router = express.Router()
 import pkg from 'pg';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
+import { google } from 'googleapis';
 
 const { Pool } = pkg;
 dotenv.config();
@@ -17,6 +18,12 @@ app.use(
         cookie: { secure: true },
     })
 )
+
+const oauth2Client = new google.auth.OAuth2(
+  process.env.CLIENT_ID,
+  process.env.SECRET_ID,
+  process.env.REDIRECT
+);
 
 
 
@@ -94,9 +101,11 @@ const workos = new WorkOS(process.env.WORKOS_API_KEY)
 const clientID = process.env.WORKOS_CLIENT_ID
 const organizationID = 'org_01J25MWRKQ31M7R3N081H1XDMM'
 const redirectURI = 'https://digitaldev.io.vn/callback'
+// const redirectURI = 'http://localhost:8000/callback'
+
 const state = ''
 
-router.get('/', function (req, res) {
+router.get('/sso', function (req, res) {
     if (session.isloggedin) {
         res.render('login_successful.ejs', {
             profile: session.profile,
@@ -147,51 +156,78 @@ router.post('/login', (req, res) => {
     }
 })
 
-router.get('/callback', async (req, res) => {
-    let errorMessage;
-    try {
-      const { code, error } = req.query;
-  
-      if (error) {
-        errorMessage = `Redirect callback error: ${error}`;
-        res.render('error.ejs', { error: errorMessage });
-      } else {
-        const profile = await workos.sso.getProfileAndToken({
-          code,
-          clientID,
-        });
-  
-        let user = await getUserById(profile.profile.id);
-        console.log('----->');
-        console.log(user);
-        if (!user) {
-          user = await createUser(profile.profile);
-        }
-  
-        const token = jwt.sign(
-          { id: user.id, email: user.email, first_name: user.first_name, last_name: user.last_name },
-          process.env.JWT_SECRET,
-          { expiresIn: '1h' }
-        );
-        console.log('-+++++++--->');
+router.get('/', (req, res) => {
+  const url = oauth2Client.generateAuthUrl({
+    access_type: 'offline', 
+    scope: 'https://www.googleapis.com/auth/calendar.readonly'
+  });
+  res.redirect(url);
+})
 
-        // req.session.first_name = profile.first_name;
-        // req.session.profile = JSON.stringify(profile, null, 4);
-        // req.session.isloggedin = true;
-
-        res.render('login_successful.ejs', {
-            profile: user,
-            first_name: user.first_name,
-            token: token
-        })
-        // res.status(200).json({ token });
-      }
-    } catch (error) {
-      errorMessage = `Error exchanging code for profile: ${error.message}`;
+router.get('/redirect', async (req, res) => {
+  const code = req.query.code;
+  // Exchange the code for tokens
+  oauth2Client.getToken(code, (err, tokens) => {
+    if (err) {
+      // Handle error if token exchange fails
+      console.error('Couldn\'t get token', err);
+      res.send('Error');
+      return;
     }
-  
+    // Set the credentials for the Google API client
+    console.log(tokens);
+    oauth2Client.setCredentials(tokens);
+    // Notify the user of a successful login
+    res.send('Successfully logged in');
+  });
+});
+
+router.get('/callback', async (req, res) => {
+  let errorMessage;
+  try {
+    const { code, error } = req.query;
+
+    if (error) {
+      errorMessage = `Redirect callback error: ${error}`;
+      res.render('error.ejs', { error: errorMessage });
+    } else {
+      const profile = await workos.sso.getProfileAndToken({
+        code,
+        clientID,
+      });
+
+      let user = await getUserById(profile.profile.id);
+      console.log('----->');
+      console.log(user);
+      if (!user) {
+        user = await createUser(profile.profile);
+      }
+
+      const token = jwt.sign(
+        { id: user.id, email: user.email, first_name: user.first_name, last_name: user.last_name },
+        process.env.JWT_SECRET,
+        { expiresIn: '1h' }
+      );
+      console.log('-+++++++--->');
+
+      // req.session.first_name = profile.first_name;
+      // req.session.profile = JSON.stringify(profile, null, 4);
+      // req.session.isloggedin = true;
+
+      res.render('login_successful.ejs', {
+          profile: user,
+          first_name: user.first_name,
+          token: token
+      })
+      // res.status(200).json({ token });
+    }
+  } catch (error) {
+    errorMessage = `Error exchanging code for profile: ${error.message}`;
+  }
+
 
 })
+
 
 router.get('/logout', async (req, res) => {
     try {
@@ -204,5 +240,40 @@ router.get('/logout', async (req, res) => {
         res.render('error.ejs', { error: error })
     }
 })
+
+// TEST Google Calendar API
+router.get('/calendars', (req, res) => {
+  const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+  calendar.calendarList.list({}, (err, response) => {
+    console.log(response);
+    if (err) {
+      console.error('Error fetching calendars', err);
+      res.end('Error!');
+      return;
+    }
+    const calendars = response.data.items;
+    res.json(calendars);
+  });
+});
+
+router.get('/events', (req, res) => {
+  const calendarId = req.query.calendar ?? 'primary';
+  const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+  calendar.events.list({
+    calendarId,
+    timeMin: (new Date()).toISOString(),
+    maxResults: 15,
+    singleEvents: true,
+    orderBy: 'startTime'
+  }, (err, response) => {
+    if (err) {
+      console.error('Can\'t fetch events');
+      res.send('Error');
+      return;
+    }
+    const events = response.data.items;
+    res.json(events);
+  });
+});
 
 export default router
